@@ -41,6 +41,7 @@ go run ./01-generic-methods/after
 | [14](14-tools/) | — | ツールチェーンの挙動変更いろいろ |
 | [15](15-httptest/) | httptest.NewServer が実 TCP ポートを listen | `NewTestServer` が偽ネットワーク上に（URL は常に example.com） |
 | [16](16-secret/) | secret mode は goroutine に漏れ穴 | spawn した goroutine も secret mode を継承 |
+| [17](17-plan9-errno/) | Errno コードは Plan 9 ビルドで壊れる | Plan 9 にも `syscall.Errno` が定義され build tag 不要 |
 
 ## 01 — ジェネリックメソッド
 
@@ -655,6 +656,38 @@ secret.Do(func() {
 
 linux の挙動は stdlib 自身の `TestSecretInheritance` が保証している。実装差分も 1 行で分かりやすく、1.27 の `runtime/proc.go` の goroutine 生成部に「親が secret mode なら `newg.secret = 1`」が追加された（1.26 にはこの行が無い）。
 
+## 17 — Plan 9 にも syscall.Errno
+
+### そもそも「Plan 9」って何？
+
+**Plan 9 from Bell Labs** は、UNIX を作った当のベル研チームが 1980 年代末に「UNIX の設計をやり直すなら」と作った研究用 OS。名前の元ネタは「史上最低の映画」と名高い B 級 SF『Plan 9 from Outer Space』(1959) で、当人たちが大真面目にふざけて付けた。マスコットはうさぎの **Glenda**。作者は Renée French — **後に Go の Gopher を描くことになる同じ人**である。
+
+思想は「UNIX の『すべてはファイル』を極限まで」。ネットワーク接続も、画面上のウィンドウも、よそのマシンの CPU さえもファイルとして見える。OS 自体は天下を取れなかったが、アイデアの方は大脱走した: Linux の `/proc`、コンテナの祖先にあたる名前空間、WSL2 や VM でファイル共有に使われる 9P プロトコル、そして極めつけは **UTF-8** — いま世界中の文字がやりとりできるあのエンコーディングは、1992 年に Ken Thompson と Rob Pike が Plan 9 のためにダイナーの紙ナプキンで設計したものだ。
+
+そしてこの 2 人 + Robert Griesemer が 2007 年に Google で作ったのが **Go**。初期の Go コンパイラは Plan 9 の C コンパイラの直系で、Go のアセンブラは今も Plan 9 流の文法、goroutine の源流も Pike が Plan 9 時代に作った言語群 (Newsqueak/Alef/Limbo) にある。つまり Go にとって Plan 9 は実家であり、2026 年の今も公式ポートとして生かされ続けている。
+
+### で、Errno がどうした？
+
+OS への依頼（システムコール）が失敗すると、ほとんどの OS は**番号**で理由を返す。これが **errno**（2 = ファイルがない、13 = 権限がない、…）で、Go では `syscall.Errno` 型。ところが Plan 9 だけは番号ではなく**文字列**で理由を返す流儀を貫いており（ここでも独自路線）、Go の Plan 9 版には `syscall.Errno` が概念ごと存在しなかった。結果、「errno を見て分岐する」移植性コードは Plan 9 向けビルドだけコンパイルが壊れ、`//go:build !plan9` で隔離する必要があった。
+
+1.27 は「Plan 9 でも型としては定義する。ただし実際に返ることはない」という割り切りでこれを解消した。実家の流儀は変えず、外の世界のコードも通す。
+
+### 何が嬉しい？
+
+- `errors.As(err, &errno)` で EINTR リトライや ENOENT 判定をする定番コードから、Plan 9 隔離用の build tag が消せる。
+- 実務インパクトは今回の網羅表で最小級。ただ「**実際には使われない型を定義してでも、移植性コードのビルドを守る**」という Go の互換性哲学の一番小さな見本で、故郷の OS を 2026 年でも見捨てない話としても味わい深い。
+
+### 実測
+
+```console
+$ go run ./17-plan9-errno                              # darwin で実行
+errno=2 (no such file or directory)
+
+$ GOOS=plan9 GOARCH=amd64 go build ./17-plan9-errno    # 1.27: コンパイル成功
+$ GOOS=plan9 GOARCH=amd64 go1.26.5 build .             # 1.26 実測:
+./main.go:12:20: undefined: syscall.Errno              # ← ビルド不能だった
+```
+
 ## Go 1.27 リリースノート網羅表
 
 コードで示せる項目は例に、示しにくい項目は注記で全項目カバー。
@@ -703,7 +736,7 @@ linux の挙動は stdlib 自身の `TestSecretInheritance` が保証してい�
 | net/url URL.Clone / Values.Clone | [04](04-stdlib-bits/) |
 | runtime/secret: secret モードの goroutine 継承 | [16](16-secret/) |
 | strings.CutLast | [04](04-stdlib-bits/) |
-| syscall: Plan 9 の Errno 定義 | 注記のみ |
+| syscall: Plan 9 の Errno 定義 | [17](17-plan9-errno/) |
 | testing/synctest Sleep | [10](10-synctest/) |
 | unicode 15 → 17 | 注記のみ: テーブル更新（Unicode 16/17 の 2 世代分） |
 | **ports**: macOS 13 Ventura 以降必須 | 注記のみ |

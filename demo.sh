@@ -52,4 +52,11 @@ echo "━━━━━━━━━━ 16-secret (実験的: 有効なのは linux
 GOEXPERIMENT=runtimesecret go run ./16-secret
 echo
 
+echo "━━━━━━━━━━ 17-plan9-errno ━━━━━━━━━━"
+echo "--- ネイティブ実行 (errno が返る環境)"
+go run ./17-plan9-errno
+echo "--- GOOS=plan9 でクロスコンパイル (1.26 では undefined: syscall.Errno だった)"
+GOOS=plan9 GOARCH=amd64 go build -o /dev/null ./17-plan9-errno && echo "build OK"
+echo
+
 echo "ツールチェーン系 (stdversion / tidy / go fix / go doc) は ./14-tools/demo.sh で。"

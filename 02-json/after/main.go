@@ -30,6 +30,13 @@ func main() {
 	_ = json.Unmarshal([]byte(`{"NAME":"x"}`), &ev, json.MatchCaseInsensitiveNames(true))
 	fmt.Println("opt-in case-insensitive:", ev.Name)
 
+	// 不正な UTF-8 もデフォルトでエラー。黙ってデータが化けない
+	var s string
+	err = json.Unmarshal([]byte("\"a\xffb\""), &s)
+	fmt.Println("invalid UTF-8:", err)
+	_ = json.Unmarshal([]byte("\"a\xffb\""), &s, jsontext.AllowInvalidUTF8(true))
+	fmt.Printf("opt-in lenient: %q\n", s)
+
 	// 整形も Options として渡す
 	out, _ := json.Marshal(Event{Name: "miyazaki.go"}, jsontext.WithIndent("  "))
 	fmt.Println(string(out))

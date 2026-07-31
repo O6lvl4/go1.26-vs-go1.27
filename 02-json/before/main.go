@@ -23,6 +23,11 @@ func main() {
 	_ = json.Unmarshal([]byte(`{"NAME":"x"}`), &ev)
 	fmt.Println("case-insensitive match:", ev.Name)
 
+	// 不正な UTF-8 は黙って U+FFFD に化ける。データ破壊がエラーにならない
+	var s string
+	err = json.Unmarshal([]byte("\"a\xffb\""), &s)
+	fmt.Printf("invalid UTF-8: %q %v\n", s, err)
+
 	// 整形はエンコーダの設定ではなく別関数 MarshalIndent
 	out, _ := json.MarshalIndent(Event{Name: "miyazaki.go"}, "", "  ")
 	fmt.Println(string(out))

@@ -41,4 +41,11 @@ echo "--- after (GOEXPERIMENT=simd: ハードウェア SIMD)"
 GOEXPERIMENT=simd go run ./13-simd/after
 echo
 
+echo "━━━━━━━━━━ 15-httptest ━━━━━━━━━━"
+echo "--- before (実 TCP: URL は毎回違うポート)"
+go test -count=1 -v ./15-httptest/before 2>&1 | grep -E "URL=|^ok"
+echo "--- after (偽ネットワーク: URL は常に example.com)"
+go test -count=1 -v ./15-httptest/after 2>&1 | grep -E "URL=|^ok"
+echo
+
 echo "ツールチェーン系 (stdversion / tidy / go fix / go doc) は ./14-tools/demo.sh で。"

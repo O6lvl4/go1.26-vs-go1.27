@@ -40,6 +40,7 @@ go run ./01-generic-methods/after
 | [13](13-simd/) | SIMD は cgo/アセンブリ/自動ベクトル化なし | 実験的 `simd` パッケージ（ポータブル） |
 | [14](14-tools/) | — | ツールチェーンの挙動変更いろいろ |
 | [15](15-httptest/) | httptest.NewServer が実 TCP ポートを listen | `NewTestServer` が偽ネットワーク上に（URL は常に example.com） |
+| [16](16-secret/) | secret mode は goroutine に漏れ穴 | spawn した goroutine も secret mode を継承 |
 
 ## 01 — ジェネリックメソッド
 
@@ -624,6 +625,36 @@ srv.Client().Get(srv.URL)
 
 注意: 偽ネットワークへの配線を持つのは `srv.Client()` だけ。素の `http.Get` を使うと本物の example.com に行ってしまう。synctest バブル内で HTTP テストができるのは、この偽ネットワークが OS のブロッキング I/O を経由しないおかげ。
 
+## 16 — secret mode の goroutine 継承（実験的）
+
+### そもそも「secret mode」って何？
+
+暗号の秘密鍵のような「絶対に漏らしたくないデータ」は、使い終わったあともメモリに残骸が残る。プログラムがクラッシュしたときのダンプ（メモリの記念写真）や、同じメモリを後から再利用する別のコードから、その残骸を読まれてしまうことがある。**runtime/secret**（1.26 で実験導入）の `secret.Do(f)` は、f が使ったレジスタ・スタック・ヒープを、使い終わりしだい確実にゼロで上書きしてくれる「シュレッダー付きの作業部屋」。
+
+ところが 1.26 では、部屋の中から `go` で新しい作業員（goroutine）を呼ぶと、**その作業員は部屋の外で働いていた**。鍵を扱う処理を並行化した瞬間、シュレッダーの保証が静かに消える罠があった。1.27 で「部屋の中で生まれた作業員も部屋の中」に直った。
+
+### 何が嬉しい？
+
+- 暗号ライブラリの作者が「Do の中では go を書くな」という守りにくい規約を背負わなくてよくなる。並行化しても forward secrecy（あとで鍵が漏れても過去の通信は守られる性質）の前提が崩れない。
+- ただし対応は linux/amd64・linux/arm64 のみ、`GOEXPERIMENT=runtimesecret` 必須の実験段階。いまは「こういう部屋が標準に入りつつある」と知っておくのが正しい距離感。
+
+### 挙動
+
+```go
+secret.Do(func() {
+	fmt.Println(secret.Enabled()) // 親
+	go func() { fmt.Println(secret.Enabled()) }() // 子 ← ここが 1.27 の差分
+})
+```
+
+| 環境 | 親 | 子 |
+|---|---|---|
+| linux + 1.26 | true | **false**（保護が漏れる） |
+| linux + 1.27 | true | **true** |
+| darwin など未対応 OS | false | false（Do は素通し・実測） |
+
+linux の挙動は stdlib 自身の `TestSecretInheritance` が保証している。実装差分も 1 行で分かりやすく、1.27 の `runtime/proc.go` の goroutine 生成部に「親が secret mode なら `newg.secret = 1`」が追加された（1.26 にはこの行が無い）。
+
 ## Go 1.27 リリースノート網羅表
 
 コードで示せる項目は例に、示しにくい項目は注記で全項目カバー。
@@ -670,7 +701,7 @@ srv.Client().Get(srv.URL)
 | net/http（ユーザ提供 Conn での ALPN / HTTP/2 priority RFC 9218 / Response.Body 自動 drain / MaxHeaderValueCount） | 注記のみ: Body 自動 drain は接続再利用の改善。MaxIdleConns=0 運用は要確認 |
 | net/http/httptest NewTestServer | [10](10-synctest/) / [15](15-httptest/) |
 | net/url URL.Clone / Values.Clone | [04](04-stdlib-bits/) |
-| runtime/secret: secret モードの goroutine 継承 | 注記のみ |
+| runtime/secret: secret モードの goroutine 継承 | [16](16-secret/) |
 | strings.CutLast | [04](04-stdlib-bits/) |
 | syscall: Plan 9 の Errno 定義 | 注記のみ |
 | testing/synctest Sleep | [10](10-synctest/) |

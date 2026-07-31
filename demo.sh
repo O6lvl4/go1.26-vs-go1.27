@@ -48,4 +48,8 @@ echo "--- after (偽ネットワーク: URL は常に example.com)"
 go test -count=1 -v ./15-httptest/after 2>&1 | grep -E "URL=|^ok"
 echo
 
+echo "━━━━━━━━━━ 16-secret (実験的: 有効なのは linux/amd64・arm64 のみ) ━━━━━━━━━━"
+GOEXPERIMENT=runtimesecret go run ./16-secret
+echo
+
 echo "ツールチェーン系 (stdversion / tidy / go fix / go doc) は ./14-tools/demo.sh で。"
